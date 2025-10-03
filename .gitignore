@@ -1,0 +1,99 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files - ignore contents but keep structure
+data/**
+!data/
+!data/bread_dataset/
+!data/bread_dataset/train/
+!data/bread_dataset/train/normal/
+!data/bread_dataset/train/defective/
+!data/bread_dataset/test/
+!data/bread_dataset/test/normal/
+!data/bread_dataset/test/defective/
+!data/frames/
+!data/output_frames/
+!data/.gitkeep
+
+# Keep .gitkeep files to preserve empty directories
+!**/.gitkeep
+
+# Models - ignore trained models but keep folder
+models/*.pth
+models/*.h5
+!models/.gitkeep
+
+# Results - ignore generated results but keep folder
+results/*.png
+results/*.jpg
+results/*.pdf
+results/*.csv
+!results/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db
+*.log
+
+# Video files
+*.avi
+*.mp4
+*.mov
+*.mkv
+
+# Image files (except examples)
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.tiff
+!examples/**/*.jpg
+!examples/**/*.png
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
