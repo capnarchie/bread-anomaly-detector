@@ -2,20 +2,45 @@ import cv2
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import load_model
-print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
-print("TensorFlow is using GPU:", tf.test.is_built_with_cuda())
+import time
 
-exit(0)
 VIDEO_PATH = "recording_20250919_160901.avi"
-MODEL_PATH = "bread_autoencoder.h5"
+MODEL_PATH = "bread_autoencoder2.h5"
 IMAGE_SIZE = 128
 
 def do_nothing(x):
     pass
 
 def main():
+    # Configure GPU for optimal real-time performance
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Enable memory growth
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            
+            # Enable XLA JIT compilation for faster inference
+            tf.config.optimizer.set_jit(True)
+            
+            # Limit GPU memory to ensure consistent performance
+            tf.config.experimental.set_virtual_device_configuration(
+                gpus[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=2048)]
+            )
+            
+            print(f"GPU configured for real-time processing: {len(gpus)} GPU(s) found")
+        except RuntimeError as e:
+            print(f"GPU configuration error: {e}")
+    
     # Load trained autoencoder
     autoencoder = load_model(MODEL_PATH, compile=False)
+    
+    # Warm up the model with different batch sizes for optimal performance
+    print("Warming up model for real-time inference...")
+    for batch_size in [1, 2, 4, 8]:
+        dummy_input = np.random.random((batch_size, IMAGE_SIZE, IMAGE_SIZE, 1)).astype(np.float32)
+        _ = autoencoder.predict(dummy_input, verbose=0)
+    print("Model optimized for real-time processing")
 
     # Warm up threshold: use some normal reconstructions
     # (for now you can hardcode or compute separately)
@@ -45,9 +70,18 @@ def main():
     cv2.createTrackbar('ROI Left', 'Controls', 0, FRAME_WIDTH, do_nothing)
     cv2.createTrackbar('ROI Right', 'Controls', FRAME_WIDTH, FRAME_WIDTH, do_nothing)
 
-    print("Video opened successfully. Adjust sliders. Press 'q' to quit.")
+    print("Real-time anomaly detection started. Press 'q' to quit.")
+    
+    # Performance monitoring
+    fps_counter = 0
+    fps_start_time = time.time()
+    last_fps_display = time.time()
+    inference_times = []
+    frame_times = []
 
     while True:
+        frame_start_time = time.time()
+        
         ret, frame = cap.read()
         if not ret:
             print("End of video or cannot read the frame.")
@@ -86,6 +120,10 @@ def main():
 
             c = sorted(filtered_contours, key=cv2.contourArea, reverse=True)[:5] if filtered_contours else None
             if c is not None:
+                # Batch processing for GPU efficiency
+                batch_data = []
+                contour_info = []
+                
                 for cnt in c:
                     area = cv2.contourArea(cnt)
                     x, y, w, h = cv2.boundingRect(cnt)
@@ -96,38 +134,94 @@ def main():
                         continue
                     bread_resized = cv2.resize(bread_roi, (IMAGE_SIZE, IMAGE_SIZE))
                     bread_resized = bread_resized.astype("float32") / 255.0
-                    bread_resized = np.expand_dims(bread_resized, axis=(0, -1))
+                    
+                    batch_data.append(bread_resized)
+                    contour_info.append((cnt, area, x, y, w, h))
+                
+                # Process all bread regions in a single batch for GPU efficiency
+                if batch_data:
+                    inference_start = time.time()
+                    
+                    batch_input = np.array(batch_data)
+                    batch_input = np.expand_dims(batch_input, axis=-1)  # Add channel dimension
+                    
+                    # Single batched prediction - GPU optimized
+                    batch_recon = autoencoder.predict(batch_input, verbose=0)
+                    batch_errors = np.mean((batch_input - batch_recon) ** 2, axis=(1, 2, 3))
+                    
+                    inference_time = time.time() - inference_start
+                    inference_times.append(inference_time)
+                    
+                    # Process results
+                    for i, (cnt, area, x, y, w, h) in enumerate(contour_info):
+                        error = batch_errors[i]
+                        
+                        # Decide anomaly
+                        if error > threshold or area > baked_together_area_thresh:
+                            color = (0, 0, 255)  # red
+                            label = f"Anomaly ({error:.4f})"
+                        else:
+                            color = (0, 255, 0)  # green
+                            label = f"Normal ({error:.4f})"
 
-                    # Run through autoencoder
-                    recon = autoencoder.predict(bread_resized, verbose=0)
-                    error = np.mean((bread_resized - recon) ** 2)
+                        cv2.rectangle(contour_frame[roi_top:roi_bottom, roi_left:roi_right],
+                                      (x, y), (x + w, y + h), color, 3)
+                        cv2.putText(contour_frame, label, 
+                                    (roi_left + x, roi_top + y - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
 
-                    # Decide anomaly
-                    if error > threshold or area > baked_together_area_thresh:
-                        color = (0, 0, 255)  # red
-                        label = f"Anomaly ({error:.4f})"
-                    else:
-                        color = (0, 255, 0)  # green
-                        label = f"Normal ({error:.4f})"
-
-                    cv2.rectangle(contour_frame[roi_top:roi_bottom, roi_left:roi_right],
-                                  (x, y), (x + w, y + h), color, 3)
-                    cv2.putText(contour_frame, label, 
-                                (roi_left + x, roi_top + y - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
+        # Performance monitoring
+        fps_counter += 1
+        current_time = time.time()
+        frame_processing_time = current_time - frame_start_time
+        frame_times.append(frame_processing_time)
+        
+        # Update FPS display every second
+        if current_time - last_fps_display >= 1.0:
+            fps = fps_counter / (current_time - fps_start_time)
+            avg_inference_time = np.mean(inference_times[-fps_counter:]) if inference_times else 0
+            avg_frame_time = np.mean(frame_times[-fps_counter:]) if frame_times else 0
+            
+            fps_counter = 0
+            fps_start_time = current_time
+            last_fps_display = current_time
+            
+            # Display performance metrics
+            cv2.putText(contour_frame, f"FPS: {fps:.1f}", (10, 30), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+            cv2.putText(contour_frame, f"Inference: {avg_inference_time*1000:.1f}ms", (10, 60), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+            cv2.putText(contour_frame, f"Frame: {avg_frame_time*1000:.1f}ms", (10, 90), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
         # Show result
         if roi_top < roi_bottom and roi_left < roi_right:
             roi_contour_view = contour_frame[roi_top:roi_bottom, roi_left:roi_right]
-            cv2.imshow('Contours Detected (ROI)', cv2.resize(roi_contour_view, (300, 300)))
-        cv2.imshow('contour_frame', contour_frame)
+            cv2.imshow('ROI Anomaly Detection', cv2.resize(roi_contour_view, (400, 400)))
+        cv2.imshow('Real-time Feed', cv2.resize(contour_frame, (800, 600)))
 
-        if cv2.waitKey(10) & 0xFF == ord('q'):
+        # Minimal wait time for real-time performance
+        if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
     cap.release()
     cv2.destroyAllWindows()
+    
+    # Print performance summary
+    if inference_times:
+        print(f"\nReal-time Performance Summary:")
+        print(f"Average inference time: {np.mean(inference_times)*1000:.2f}ms")
+        print(f"Min inference time: {np.min(inference_times)*1000:.2f}ms")
+        print(f"Max inference time: {np.max(inference_times)*1000:.2f}ms")
+        print(f"Average frame processing time: {np.mean(frame_times)*1000:.2f}ms")
+        print(f"Total frames processed: {len(frame_times)}")
     print("Resources released.")
 
 if __name__ == '__main__':
     main()
+    print("Num GPUs Available:", len(tf.config.list_physical_devices('GPU')))
+    print(tf.config.get_visible_devices())
+    print("TensorFlow version:", tf.__version__)
+    #tf.debugging.set_log_device_placement(True)
+    #print(tf.config.list_physical_devices('GPU'))
+    #exit()
