@@ -1,0 +1,29 @@
+import cv2
+from ultralytics import YOLO
+
+# Load your trained model
+model = YOLO("./runs/train/bread_defects_yolov11/weights/best.pt")
+
+# Open the video (or use 0 for webcam)
+cap = cv2.VideoCapture("recording_20250919_160901.avi")
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Run YOLO inference on the frame
+    results = model(frame, imgsz=320, conf=0.5)  
+
+    # Draw bounding boxes on the frame
+    annotated_frame = results[0].plot()
+
+    # Show the frame in a window
+    cv2.imshow("YOLOv11n Real-Time Inference", annotated_frame)
+
+    # Press 'q' to quit
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
