@@ -2,10 +2,10 @@ import cv2
 from ultralytics import YOLO
 
 # Load your trained model
-model = YOLO("./runs/train/bread_defects_yolov11/weights/best.pt")
+model = YOLO("./yolo/best.pt")
 
 # Open the video (or use 0 for webcam)
-cap = cv2.VideoCapture("recording_20250919_160901.avi")
+cap = cv2.VideoCapture("./data/recording_20250919_160901.avi")
 
 while cap.isOpened():
     ret, frame = cap.read()
