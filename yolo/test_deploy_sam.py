@@ -1,0 +1,34 @@
+import cv2
+from ultralytics import FastSAM
+
+# Load the FastSAM model
+model = FastSAM('runs/train/fastsam3/weights/best.pt')  # Replace with the path to your FastSAM model
+
+# Load the video
+video_path = 'data/leib3.avi'  # Replace with the path to your video
+cap = cv2.VideoCapture(video_path)
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Perform inference on the frame
+    results = model.predict(frame)
+
+    # Draw the results on the frame
+    annotated_frame = results[0].plot()
+
+    # Display the frame
+    cv2.imshow('FastSAM Inference', annotated_frame)
+    # Pause/unpause the video if 'p' is pressed
+    # if cv2.waitKey(1) & 0xFF == ord('p'):
+    #     while True:
+    #         if cv2.waitKey(1) & 0xFF == ord('p'):
+    #             break
+    # Break the loop if 'q' is pressed
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+# Release the video capture and close windows
+cap.release()
+cv2.destroyAllWindows()
