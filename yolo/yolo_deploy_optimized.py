@@ -4,7 +4,7 @@ import time
 from collections import deque
 
 # Load your trained model
-model = YOLO("runs/train/bread_defects_yolov11/weights/best.pt")#"./yolo/best.pt")
+model = YOLO("runs/train/bread_defects_yolov11/weights/leib2.pt")#"./yolo/best.pt")
 
 # Force the model to use GPU if available
 model.to("cuda")
@@ -22,7 +22,7 @@ USE_MOTION_DETECTION = False
 MOTION_THRESHOLD = 500  # Minimum contour area to trigger inference
 
 # Strategy 3: ROI (Region of Interest) - Only process center of frame where bread is fully visible
-USE_ROI = True
+USE_ROI = False
 ROI_START_X = 0.2  # Start at 20% from left (adjust based on your conveyor)
 ROI_END_X = 0.8    # End at 80% from left
 ROI_START_Y = 0.1  # Start at 10% from top
@@ -36,7 +36,7 @@ SHOW_FPS = True
 # =================================================================
 
 # Open the video (or use 0 for webcam)
-cap = cv2.VideoCapture("data/recording/recording_20250919_160901.avi")
+cap = cv2.VideoCapture("data/leib2.avi")
 
 # Get video properties
 fps = cap.get(cv2.CAP_PROP_FPS)
@@ -149,8 +149,12 @@ while cap.isOpened():
                 # Draw on full frame
                 cv2.rectangle(annotated_frame, (x1_full, y1_full), (x2_full, y2_full), (0, 255, 0), 2)
                 label = f"{model.names[cls]} {conf:.2f}"
-                cv2.putText(annotated_frame, label, (x1_full, y1_full - 10), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
+                if model.names[cls].lower() == "bread":
+                    cv2.putText(annotated_frame, label, (x1_full, y1_full - 10), 
+                               cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 2)
+                else:
+                    cv2.putText(annotated_frame, label, (x1_full, y1_full - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 255, 0), 2)
         else:
             annotated_frame = results[0].plot()
     else:

@@ -8,11 +8,11 @@ DATASET_ZIP = "data.zip"     # change this to your file
 EXTRACT_DIR = "datasets/bread_defects"
 DATA_YAML = os.path.join(EXTRACT_DIR, "data.yaml")  # Roboflow export usually includes this
 MODEL = "FastSAM-s.pt"   # small model, try 'yolo11s.pt' or larger if you have GPU power
-EPOCHS = 40
+EPOCHS = 300
 IMG_SIZE = 320
 BATCH = 16
 DEVICE = "0"           # "0" for first GPU, "cpu" for CPU only
-RESUME_CHECKPOINT = None#"./runs/train/bread_defects_yolov11/weights/last.pt"  # Path to the last checkpoint, set to None to start fresh
+RESUME_CHECKPOINT = "runs/train/fastsam11/weights/last.pt"#./runs/train/fastsam6/weights/best.pt"  # Set to checkpoint path to resume, or None to start fresh
 
 def unzip_dataset(zip_path, extract_dir):
     """Unzip dataset into target folder if not already extracted."""
@@ -37,7 +37,14 @@ def train_yolo(resume=None):
         plots=True,
         resume=resume is not None  # Resume training if checkpoint is provided
     )
+    print(f"\n[INFO] Training complete! Best weights: runs/train/fastsam/weights/best.pt")
 
 if __name__ == "__main__":
-    unzip_dataset(DATASET_ZIP, EXTRACT_DIR)
+    unzip_dataset(DATASET_ZIP, EXTRACT_DIR)  # Comment out if already extracted
+    
+    # NOTE: If your previous training completed (e.g., 80/80 epochs), you CANNOT resume.
+    # Either: 1) Set RESUME_CHECKPOINT = None to start fresh
+    #         2) Use the trained model directly for inference
+    #         3) Increase EPOCHS and train from the best.pt (not resume, just use it as starting weights)
+    
     train_yolo(resume=RESUME_CHECKPOINT)

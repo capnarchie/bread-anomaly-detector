@@ -12,7 +12,7 @@ EPOCHS = 500
 IMG_SIZE = 320
 BATCH = 16
 DEVICE = "0"           # "0" for first GPU, "cpu" for CPU only
-RESUME_CHECKPOINT = "./runs/train/bread_defects_yolov11/weights/last.pt"  # Path to the last checkpoint, set to None to start fresh
+RESUME_CHECKPOINT = None#"./runs/train/bread_defects_yolov11/weights/last.pt"  # Path to the last checkpoint, set to None to start fresh
 # =====================================
 
 def unzip_dataset(zip_path, extract_dir):

@@ -2,8 +2,8 @@ import cv2
 import os
 
 # ====== CONFIG ======
-VIDEO_PATH = "recording_20250919_160901.avi"         # Path to your video
-OUTPUT_DIR = "bread_frames_all"           # Folder where frames will be saved
+VIDEO_PATH = "./data/leib3.avi"#"recording_20250919_160901.avi"         # Path to your video
+OUTPUT_DIR = "./data/leib3_frames"           # Folder where frames will be saved
 FRAME_PREFIX = "frame_"               # Prefix for image filenames
 FRAME_FORMAT = "jpg"                  # Image format (jpg, png, etc.)
 FPS_SKIP = 1                          # Save every n-th frame (1 = every frame)
