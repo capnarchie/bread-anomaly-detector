@@ -5,7 +5,7 @@ class SimpleBreadTracker:
     
     def __init__(self):
         self.next_id = 0
-        self.tracked_breads = {}  # {id: {'center': (x,y), 'missing_frames': 0, 'box': (x1,y1,x2,y2)}}
+        self.tracked_breads = {}  # {id: {'center': (x,y), 'missing_frames': 0, 'box': (x1,y1,x2,y2), 'crack_percentage': 0.0, 'is_defective': False}}
         self.max_missing_frames = 10  # Remove bread after 10 missing frames
         self.max_distance = 150  # Max pixels bread can move between frames
     
@@ -31,7 +31,10 @@ class SimpleBreadTracker:
                 self.tracked_breads[self.next_id] = {
                     'center': center,
                     'missing_frames': 0,
-                    'box': box
+                    'box': box,
+                    'crack_percentage': 0.0,
+                    'is_defective': False,
+                    'num_cracks': 0
                 }
                 self.next_id += 1
             return self.tracked_breads
@@ -72,7 +75,10 @@ class SimpleBreadTracker:
                 self.tracked_breads[self.next_id] = {
                     'center': center,
                     'missing_frames': 0,
-                    'box': box
+                    'box': box,
+                    'crack_percentage': 0.0,
+                    'is_defective': False,
+                    'num_cracks': 0
                 }
                 self.next_id += 1
         
