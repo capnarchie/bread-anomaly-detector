@@ -129,7 +129,7 @@ def is_crack_in_bread(crack_box, bread_box):
     x1, y1, x2, y2 = bread_box
     center_in_bread = (x1 <= crack_center_x <= x2) and (y1 <= crack_center_y <= y2)
     
-    return iou > 0.1 or center_in_bread
+    return iou > 0.3 or center_in_bread
 
 def draw_tracking_results(frame, tracked_breads):
     """Draw bounding boxes and IDs for tracked breads"""
