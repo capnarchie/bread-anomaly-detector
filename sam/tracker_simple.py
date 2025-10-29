@@ -12,6 +12,22 @@ from collections import deque
 import centroid_tracker as ct
 import validator as v
 
+from pypylon import pylon
+
+# Create an instant camera object with the camera device found first.
+camera = pylon.InstantCamera(pylon.TlFactory.GetInstance().CreateFirstDevice())
+
+# Start grabbing continuously (default strategy: GrabStrategy_OneByOne)
+camera.StartGrabbing(pylon.GrabStrategy_OneByOne)
+
+# Camera.ImageFormatConverter converts pylon images to OpenCV format
+converter = pylon.ImageFormatConverter()
+converter.OutputPixelFormat = pylon.PixelType_BGR8packed
+converter.OutputBitAlignment = pylon.OutputBitAlignment_MsbAligned
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from relay import close_device, off_all, on_relay, off_relay
+
 # Load template
 template_img = cv2.imread("./output_frames/wide_template.jpg")
 gray_template = cv2.cvtColor(template_img, cv2.COLOR_BGR2GRAY)
@@ -48,9 +64,9 @@ def relay_worker_thread():
             try:
                 time.sleep(0.1)
                 print(f'Activating relay {relay_number} for {duration}s')
-                #on_relay(relay_number)
+                on_relay(relay_number)
                 time.sleep(duration)
-                #off_relay(relay_number)
+                off_relay(relay_number)
                 print(f'Relay {relay_number} deactivated')
             finally:
                 with relay_lock:
@@ -186,170 +202,179 @@ def main():
     print("model loaded to: ", torch.cuda.get_device_name(0))
     tracker = ct.SimpleBreadTracker()
     validator = v.SimpleValidator()
-    video_path = "data/leib3.avi"#'output/recordings/recording_20251022_165450.avi'
-    cap = cv2.VideoCapture(video_path)
+    # video_path = "data/leib3.avi"#'output/recordings/recording_20251022_165450.avi'
+    # #cap = cv2.VideoCapture(video_path)
     
-    if not cap.isOpened():
-        print(f"Error: Could not open video {video_path}")
-        return
+    # if not cap.isOpened():
+    #     print(f"Error: Could not open video {video_path}")
+    #     return
     
     fps_counter = deque(maxlen=30)
     paused = False
     
-    while True:
-        if not paused:
-            ret, frame = cap.read()
-            if not ret:
-                print("End of video or failed to read frame")
-                break
-            threshold = cv2.getTrackbarPos('Threshold', 'Simple Bread Tracking') / 100.0
-            crack_threshold = cv2.getTrackbarPos('Crack%', 'Simple Bread Tracking')
-            start_time = time.time()
+    try:
+        while camera.IsGrabbing():
 
-            # Validation zone reference from center of the frame
-            height, width, _ = frame.shape
-            center_x, center_y = width // 2, height // 2
-            x1_val = int(center_x - 0.1 * width)
-            x2_val = int(center_x + 0.1 * width)
-            y1_val = int(center_y - 0.35 * height)
-            y2_val = int(center_y + 0.35 * height)
+            grabResult = camera.RetrieveResult(5000, pylon.TimeoutHandling_ThrowException)
+            if grabResult.GrabSucceeded():
+                # Access the image data and convert to OpenCV format
+                image = converter.Convert(grabResult)
+                frame = image.GetArray()
 
-            # Detect breads
-            results = sam_model.predict(frame, imgsz=640, verbose=False, conf=0.8, retina_masks=True)
-            
-            # Detect cracks
-            crack_results = sam_model_cracks.predict(frame, imgsz=640, verbose=False, conf=0.3, retina_masks=True)
-            
-            # Extract bounding boxes from bread results
-            detections = []
-            bread_masks = []
-            if results and results[0].boxes is not None:
-                boxes = results[0].boxes.xyxy.cpu().numpy()
-                masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else []
-                for idx, box in enumerate(boxes):
-                    x1, y1, x2, y2 = box.astype(int)
-                    detections.append((x1, y1, x2, y2))
-                    bread_masks.append(masks[idx] if idx < len(masks) else None)
-            
-            # Extract crack detections
-            crack_detections = []
-            crack_masks = []
-            if crack_results and crack_results[0].boxes is not None:
-                crack_boxes = crack_results[0].boxes.xyxy.cpu().numpy()
-                crack_mask_data = crack_results[0].masks.data.cpu().numpy() if crack_results[0].masks is not None else []
-                for idx, box in enumerate(crack_boxes):
-                    x1, y1, x2, y2 = box.astype(int)
-                    crack_detections.append((x1, y1, x2, y2))
-                    crack_masks.append(crack_mask_data[idx] if idx < len(crack_mask_data) else None)
-            
-            # Update tracker with bread detections
-            tracked_breads = tracker.update(detections)
-            
-            # Associate cracks with breads and calculate crack percentages + shape matching
-            for bread_id, bread_data in tracked_breads.items():
-                bread_box = bread_data['box']
-                bread_mask = None
+    # while True:
+    #     if not paused:
+    #         ret, frame = cap.read()
+    #         if not ret:
+    #             print("End of video or failed to read frame")
+    #             break
+                threshold = cv2.getTrackbarPos('Threshold', 'Simple Bread Tracking') / 100.0
+                crack_threshold = cv2.getTrackbarPos('Crack%', 'Simple Bread Tracking')
+                start_time = time.time()
+
+                # Validation zone reference from center of the frame
+                height, width, _ = frame.shape
+                center_x, center_y = width // 2, height // 2
+                x1_val = int(center_x - 0.1 * width)
+                x2_val = int(center_x + 0.1 * width)
+                y1_val = int(center_y - 0.35 * height)
+                y2_val = int(center_y + 0.35 * height)
+
+                # Detect breads
+                results = sam_model.predict(frame, imgsz=640, verbose=False, conf=0.8, retina_masks=True)
                 
-                # Find the corresponding bread mask
-                for idx, det_box in enumerate(detections):
-                    if det_box == bread_box and idx < len(bread_masks):
-                        bread_mask = bread_masks[idx]
-                        break
+                # Detect cracks
+                crack_results = sam_model_cracks.predict(frame, imgsz=640, verbose=False, conf=0.3, retina_masks=True)
                 
-                if bread_mask is None:
-                    bread_data['crack_percentage'] = 0.0
-                    bread_data['shape_defective'] = False
-                    bread_data['crack_defective'] = False
-                    bread_data['is_defective'] = False
-                    bread_data['match_score'] = 0.0
-                    continue
+                # Extract bounding boxes from bread results
+                detections = []
+                bread_masks = []
+                if results and results[0].boxes is not None:
+                    boxes = results[0].boxes.xyxy.cpu().numpy()
+                    masks = results[0].masks.data.cpu().numpy() if results[0].masks is not None else []
+                    for idx, box in enumerate(boxes):
+                        x1, y1, x2, y2 = box.astype(int)
+                        detections.append((x1, y1, x2, y2))
+                        bread_masks.append(masks[idx] if idx < len(masks) else None)
                 
-                # Calculate bread area from mask and extract contour for shape matching
-                bread_binary_mask = (bread_mask > 0.5).astype(np.uint8)
-                bread_area = np.sum(bread_binary_mask)
+                # Extract crack detections
+                crack_detections = []
+                crack_masks = []
+                if crack_results and crack_results[0].boxes is not None:
+                    crack_boxes = crack_results[0].boxes.xyxy.cpu().numpy()
+                    crack_mask_data = crack_results[0].masks.data.cpu().numpy() if crack_results[0].masks is not None else []
+                    for idx, box in enumerate(crack_boxes):
+                        x1, y1, x2, y2 = box.astype(int)
+                        crack_detections.append((x1, y1, x2, y2))
+                        crack_masks.append(crack_mask_data[idx] if idx < len(crack_mask_data) else None)
                 
-                # Get contour for shape matching
-                bread_binary_mask_255 = (bread_binary_mask * 255).astype(np.uint8)
-                bread_contours, _ = cv2.findContours(bread_binary_mask_255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                bread_contour = max(bread_contours, key=cv2.contourArea) if bread_contours else None
+                # Update tracker with bread detections
+                tracked_breads = tracker.update(detections)
                 
-                # Perform shape matching with template
-                shape_defective = False
-                match_score = 0.0
-                if bread_contour is not None and len(bread_contour) > 5:
-                    match_score = cv2.matchShapes(template_contour, bread_contour, cv2.CONTOURS_MATCH_I1, 0.0)
-                    shape_defective = match_score > threshold
-                
-                # Find all cracks that belong to this bread
-                total_crack_area = 0
-                associated_cracks = []
-                
-                for crack_idx, crack_box in enumerate(crack_detections):
-                    if is_crack_in_bread(crack_box, bread_box):
-                        associated_cracks.append(crack_idx)
-                        if crack_idx < len(crack_masks) and crack_masks[crack_idx] is not None:
-                            crack_binary_mask = (crack_masks[crack_idx] > 0.5).astype(np.uint8)
-                            crack_area = np.sum(crack_binary_mask)
-                            total_crack_area += crack_area
-                            
-                            # Draw crack on frame for visualization
-                            x1_c, y1_c, x2_c, y2_c = crack_box
-                            cv2.rectangle(frame, (x1_c, y1_c), (x2_c, y2_c), (255, 0, 255), 1)
-                
-                # Calculate crack percentage
-                if bread_area > 0:
-                    crack_percentage = (total_crack_area / bread_area) * 100.0
-                else:
-                    crack_percentage = 0.0
-                
-                crack_defective = crack_percentage > crack_threshold
-                
-                # Combined defect detection: defective if EITHER shape is bad OR cracks exceed threshold
-                bread_data['crack_percentage'] = crack_percentage
-                bread_data['match_score'] = match_score
-                bread_data['shape_defective'] = shape_defective
-                bread_data['crack_defective'] = crack_defective
-                bread_data['is_defective'] = shape_defective or crack_defective
-                bread_data['num_cracks'] = len(associated_cracks)
-            
-            draw_tracking_results(frame, tracked_breads)
-            
-            # Validation zone logic - validate breads in the zone
-            can_exit = False
-            for bread_id, bread_data in tracked_breads.items():
-                x1, y1, x2, y2 = bread_data['box']
-                center = bread_data['center']
-                is_defective = bread_data.get('is_defective', False)
-                crack_percentage = bread_data.get('crack_percentage', 0.0)
-                match_score = bread_data.get('match_score', 0.0)
-                shape_defective = bread_data.get('shape_defective', False)
-                crack_defective = bread_data.get('crack_defective', False)
-                
-                # Check if bread is in validation zone
-                in_validation_zone = (x1_val <= center[0] <= x2_val) and (y1_val <= center[1] <= y2_val)
-                in_exit_zone = (1060 <= center[0] <= 1200) and (175 <= center[1] <= 900)
-                
-                if in_validation_zone:
-                    # Add detection to validator based on COMBINED defect status
-                    validator.add_detection(is_defective, bread_id)
+                # Associate cracks with breads and calculate crack percentages + shape matching
+                for bread_id, bread_data in tracked_breads.items():
+                    bread_box = bread_data['box']
+                    bread_mask = None
                     
-                    # Draw validation info
-                    is_valid = validator.is_valid(bread_id)
-                    status_text = "BAD" if is_valid else "OK"
-                    color = (0, 0, 255) if is_valid else (0, 255, 0)
+                    # Find the corresponding bread mask
+                    for idx, det_box in enumerate(detections):
+                        if det_box == bread_box and idx < len(bread_masks):
+                            bread_mask = bread_masks[idx]
+                            break
                     
-                    cv2.putText(frame, f"Validation: {status_text}", (x1, y2 + 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-                    cv2.putText(frame, f"Shape: {match_score:.3f} {'BAD' if shape_defective else 'OK'}", (x1, y2 + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
-                    cv2.putText(frame, f"Crack: {crack_percentage:.1f}% {'BAD' if crack_defective else 'OK'}", (x1, y2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    if bread_mask is None:
+                        bread_data['crack_percentage'] = 0.0
+                        bread_data['shape_defective'] = False
+                        bread_data['crack_defective'] = False
+                        bread_data['is_defective'] = False
+                        bread_data['match_score'] = 0.0
+                        continue
+                    
+                    # Calculate bread area from mask and extract contour for shape matching
+                    bread_binary_mask = (bread_mask > 0.5).astype(np.uint8)
+                    bread_area = np.sum(bread_binary_mask)
+                    
+                    # Get contour for shape matching
+                    bread_binary_mask_255 = (bread_binary_mask * 255).astype(np.uint8)
+                    bread_contours, _ = cv2.findContours(bread_binary_mask_255, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    bread_contour = max(bread_contours, key=cv2.contourArea) if bread_contours else None
+                    
+                    # Perform shape matching with template
+                    shape_defective = False
+                    match_score = 0.0
+                    if bread_contour is not None and len(bread_contour) > 5:
+                        match_score = cv2.matchShapes(template_contour, bread_contour, cv2.CONTOURS_MATCH_I1, 0.0)
+                        shape_defective = match_score > threshold
+                    
+                    # Find all cracks that belong to this bread
+                    total_crack_area = 0
+                    associated_cracks = []
+                    
+                    for crack_idx, crack_box in enumerate(crack_detections):
+                        if is_crack_in_bread(crack_box, bread_box):
+                            associated_cracks.append(crack_idx)
+                            if crack_idx < len(crack_masks) and crack_masks[crack_idx] is not None:
+                                crack_binary_mask = (crack_masks[crack_idx] > 0.5).astype(np.uint8)
+                                crack_area = np.sum(crack_binary_mask)
+                                total_crack_area += crack_area
+                                
+                                # Draw crack on frame for visualization
+                                x1_c, y1_c, x2_c, y2_c = crack_box
+                                cv2.rectangle(frame, (x1_c, y1_c), (x2_c, y2_c), (255, 0, 255), 1)
+                    
+                    # Calculate crack percentage
+                    if bread_area > 0:
+                        crack_percentage = (total_crack_area / bread_area) * 100.0
+                    else:
+                        crack_percentage = 0.0
+                    
+                    crack_defective = crack_percentage > crack_threshold
+                    
+                    # Combined defect detection: defective if EITHER shape is bad OR cracks exceed threshold
+                    bread_data['crack_percentage'] = crack_percentage
+                    bread_data['match_score'] = match_score
+                    bread_data['shape_defective'] = shape_defective
+                    bread_data['crack_defective'] = crack_defective
+                    bread_data['is_defective'] = shape_defective or crack_defective
+                    bread_data['num_cracks'] = len(associated_cracks)
                 
-                if in_exit_zone and validator.is_valid(bread_id):
-                    # Reset validator for this bread as it exits
-                    validator.add_exit_detection(bread_id)
-                    can_exit = validator.can_exit_detection(bread_id)
-                    if can_exit:
-                        activate_relay_with_delay(relay_number=1, duration=0.1, bread_id=bread_id)
-                        can_exit = False
-                    cv2.putText(frame, "REJECT", (x1, y2 + 130), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
+                draw_tracking_results(frame, tracked_breads)
+                
+                # Validation zone logic - validate breads in the zone
+                can_exit = False
+                for bread_id, bread_data in tracked_breads.items():
+                    x1, y1, x2, y2 = bread_data['box']
+                    center = bread_data['center']
+                    is_defective = bread_data.get('is_defective', False)
+                    crack_percentage = bread_data.get('crack_percentage', 0.0)
+                    match_score = bread_data.get('match_score', 0.0)
+                    shape_defective = bread_data.get('shape_defective', False)
+                    crack_defective = bread_data.get('crack_defective', False)
+                    
+                    # Check if bread is in validation zone
+                    in_validation_zone = (x1_val <= center[0] <= x2_val) and (y1_val <= center[1] <= y2_val)
+                    in_exit_zone = (1060 <= center[0] <= 1200) and (175 <= center[1] <= 900)
+                    
+                    if in_validation_zone:
+                        # Add detection to validator based on COMBINED defect status
+                        validator.add_detection(is_defective, bread_id)
+                        
+                        # Draw validation info
+                        is_valid = validator.is_valid(bread_id)
+                        status_text = "BAD" if is_valid else "OK"
+                        color = (0, 0, 255) if is_valid else (0, 255, 0)
+                        
+                        cv2.putText(frame, f"Validation: {status_text}", (x1, y2 + 40), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                        cv2.putText(frame, f"Shape: {match_score:.3f} {'BAD' if shape_defective else 'OK'}", (x1, y2 + 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                        cv2.putText(frame, f"Crack: {crack_percentage:.1f}% {'BAD' if crack_defective else 'OK'}", (x1, y2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+                    
+                    if in_exit_zone and validator.is_valid(bread_id):
+                        # Reset validator for this bread as it exits
+                        validator.add_exit_detection(bread_id)
+                        can_exit = validator.can_exit_detection(bread_id)
+                        if can_exit:
+                            activate_relay_with_delay(relay_number=1, duration=0.1, bread_id=bread_id)
+                            can_exit = False
+                        cv2.putText(frame, "REJECT", (x1, y2 + 130), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
 
                             
             # Calculate FPS
@@ -378,19 +403,29 @@ def main():
             cv2.rectangle(frame, (1060, 175), (1200, 900), (255, 0, 0), 2)
             cv2.putText(frame, "Reject", (1060, 170), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
         # Display frame
-        cv2.imshow('Simple Bread Tracking', frame)
+            cv2.imshow('Simple Bread Tracking', frame)
         
         # Handle key presses
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord(' '):  # Space bar to pause/resume
-            paused = not paused
-            print("Paused" if paused else "Resumed")
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                off_all()
+                close_device()
+                grabResult.Release()
+                break
+                
+            # elif key == ord(' '):  # Space bar to pause/resume
+            #     paused = not paused
+            #     print("Paused" if paused else "Resumed")
+
+            #     #grabResult.Release()
+    finally:
+        camera.StopGrabbing()
+        cv2.destroyAllWindows()
     
-    # Cleanup
-    cap.release()
-    cv2.destroyAllWindows()
+        # Cleanup
+        #cap.release()
+        off_all()
+        close_device()
 
 if __name__ == "__main__":
     main()
