@@ -36,7 +36,7 @@ contours = cv2.findContours(thresh_template, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX
 template_contour = max(contours[0], key=cv2.contourArea)
 
 # Add parent directory to path to import relay module
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+#sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 #from relay import on_relay, off_relay
 
 # Relay control with single worker thread
@@ -64,9 +64,9 @@ def relay_worker_thread():
             try:
                 time.sleep(0.1)
                 print(f'Activating relay {relay_number} for {duration}s')
-                on_relay(relay_number)
+                #on_relay(relay_number)
                 time.sleep(duration)
-                off_relay(relay_number)
+                #off_relay(relay_number)
                 print(f'Relay {relay_number} deactivated')
             finally:
                 with relay_lock:
